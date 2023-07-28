@@ -8,7 +8,9 @@ class CollectionSerializer(serializers.ModelSerializer):
         model = Collection
         fields = ["id", "title", "products_count"]
 
-    products_count = serializers.IntegerField()
+    # Marked as read only because product count is not used for updating or creating a collection
+    products_count = serializers.IntegerField(read_only=True)
+
 
 class ProductSerializer(serializers.Serializer):  # type: ignore
     id = serializers.IntegerField()
@@ -62,6 +64,8 @@ class ProductSerializer(serializers.ModelSerializer):
     def calculate_tax(self, product: Product):
         return product.unit_price * Decimal(1.1)
 
+    # These functions are for if you want to create custom functionality for creating and updating
+    # when using the serializer
     # def create(self, validated_data):
     #     product = Product(**validated_data)
     #     product.other = 1
@@ -72,3 +76,13 @@ class ProductSerializer(serializers.ModelSerializer):
     #     instance.unit_price = validated_data.get("unit_price")
     #     instance.save()
     #     return instance
+
+
+class ReviewSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Review
+        fields = ["id", "date", "name", "description"]
+
+    def create(self, validated_data):
+        product_id = self.context["product_id"]
+        return Review.objects.create(product_id=product_id, **validated_data)
