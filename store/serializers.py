@@ -86,3 +86,79 @@ class ReviewSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         product_id = self.context["product_id"]
         return Review.objects.create(product_id=product_id, **validated_data)
+
+
+class SimpleProductSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Product
+        fields = ["id", "title", "unit_price"]
+
+
+class CartItemSerializer(serializers.ModelSerializer):
+    product = SimpleProductSerializer()
+    total_price = serializers.SerializerMethodField(method_name="get_total_price")
+
+    class Meta:
+        model = CartItem
+        fields = ["id", "product", "quantity", "total_price"]
+
+    def get_total_price(self, cart_item: CartItem):
+        return cart_item.quantity * cart_item.product.unit_price
+
+
+class CartSerizalizer(serializers.ModelSerializer):
+    id = serializers.UUIDField(read_only=True)
+    items = CartItemSerializer(many=True, read_only=True)
+    total_price = serializers.SerializerMethodField(method_name="get_total_price")
+
+    def get_total_price(self, cart):
+        return sum(
+            [item.quantity * item.product.unit_price for item in cart.items.all()]
+        )
+
+    class Meta:
+        model = Cart
+        fields = ["id", "items", "total_price"]
+
+
+class AddCartItemSerializer(serializers.ModelSerializer):
+    product_id = serializers.IntegerField()
+
+    # Prevent getting a hard error from django if the product_id from the post request doesnt exist
+    def validate_product_id(self, value):
+        if not Product.objects.filter(pk=value).exists():
+            raise serializers.ValidationError("No product with the given id was found")
+        return value
+
+    # We specify a custom save formula because if the item is already in the cart then we are updating
+    # just the quantity, else we are just adding the item.
+
+    # we return self.instance to comply with the default save function of the ModelSerializer
+
+    def save(self, **kwargs):
+        # The cart_id is present in the URL, not accessible in validated data. Thhere
+        cart_id = self.context["cart_id"]
+        product_id = self.validated_data["product_id"]
+        quantity = self.validated_data["quantity"]
+        try:
+            # Update existing item
+            cart_item = CartItem.objects.get(cart_id=cart_id, product_id=product_id)
+            cart_item.quantity += quantity
+            cart_item.save()
+            self.instance = cart_item
+        except CartItem.DoesNotExist:
+            # Create a new item
+            self.instance = CartItem.objects.create(
+                cart_id=cart_id, **self.validated_data
+            )
+        return self.instance
+
+    class Meta:
+        model = CartItem
+        fields = ["id", "product_id", "quantity"]
+
+
+class UpdateCartItemSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CartItem
+        fields = ["quantity"]
