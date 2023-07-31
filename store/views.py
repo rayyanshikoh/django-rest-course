@@ -2,6 +2,7 @@ from django.db.models import Count
 from django.shortcuts import render, get_object_or_404
 from django_filters.rest_framework import DjangoFilterBackend
 
+from rest_framework.decorators import action
 from rest_framework.filters import SearchFilter, OrderingFilter
 from rest_framework.generics import ListCreateAPIView, RetrieveUpdateDestroyAPIView
 from rest_framework.response import Response
@@ -11,7 +12,13 @@ from rest_framework.mixins import (
     ListModelMixin,
     RetrieveModelMixin,
     DestroyModelMixin,
-    UpdateModelMixin
+    UpdateModelMixin,
+)
+from rest_framework.permissions import (
+    IsAuthenticated,
+    AllowAny,
+    IsAdminUser,
+    DjangoModelPermissions,
 )
 from rest_framework import status
 
@@ -28,6 +35,11 @@ from .serializers import (
     UpdateCartItemSerializer,
 )
 from .pagination import DefaultPagination
+from .permissions import (
+    IsAdminOrReadOnly,
+    FullDjangoModelPermissions,
+    ViewHistoryPermission,
+)
 
 
 # PUT and PATCH are used to update data
@@ -54,6 +66,9 @@ class ProductViewSet(ModelViewSet):
 
     # Pagination
     pagination_class = DefaultPagination
+
+    # PermissionsClass
+    permission_classes = [IsAdminOrReadOnly]
 
     def get_serializer_context(self):
         return {"request": self.request}
@@ -97,6 +112,8 @@ class CollectionDetail(RetrieveUpdateDestroyAPIView):
 class CollectionViewSet(ModelViewSet):
     queryset = Collection.objects.annotate(products_count=Count("products"))
     serializer_class = CollectionSerializer
+
+    permission_classes = [IsAdminOrReadOnly]
 
     def get_serializer_context(self):
         return {"request": self.request}
@@ -159,6 +176,34 @@ class CartItemViewSet(ModelViewSet):
         )
 
 
-class CustomerViewSet(CreateModelMixin, RetrieveModelMixin, UpdateModelMixin, GenericViewSet):
+class CustomerViewSet(ModelViewSet):
     queryset = Customer.objects.all()
     serializer_class = CustomerSerializer
+
+    # Using permission classes we assign permissions to the whole view set
+    # We can specify it based on request method using def get_permissions()
+
+    # permission_classes = [FullDjangoModelPermissions] # This is a custom permission
+    permission_classes = [IsAdminUser]
+
+    def get_permissions(self):
+        if self.request.method == "GET":
+            return [AllowAny()]
+        return [IsAuthenticated()]
+
+    @action(detail=False, methods=["GET", "PUT"], permission_classes=[IsAuthenticated])
+    # This is an action
+    def me(self, request):
+        (customer, created) = Customer.objects.get_or_create(user_id=request.user.id)
+        if request.method == "GET":
+            serializer = CustomerSerializer(customer)
+            return Response(serializer.data)
+        elif request.method == "PUT":
+            serializer = CustomerSerializer(customer, data=request.data)
+            serializer.is_valid(raise_exception=True)
+            serializer.save()
+            return Response(serializer.data)
+
+    @action(detail=True, permission_classes=[ViewHistoryPermission])
+    def history(self, request, pk):
+        return Response("OK")
