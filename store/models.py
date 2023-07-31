@@ -65,10 +65,11 @@ class Customer(models.Model):
 
     def __str__(self):
         return f"{self.user.first_name} {self.user.last_name}"
-    @admin.display(ordering='user__first_name')
+
+    @admin.display(ordering="user__first_name")
     def first_name(self):
         return self.user.first_name
-    
+
     def last_name(self):
         return self.user.last_name
 
@@ -93,9 +94,7 @@ class Order(models.Model):
     customer = models.ForeignKey(Customer, on_delete=models.PROTECT)
 
     class Meta:
-        permissions = [
-            ('cancel_order', 'Can cancel order')
-        ]
+        permissions = [("cancel_order", "Can cancel order")]
 
 
 class OrderItem(models.Model):
