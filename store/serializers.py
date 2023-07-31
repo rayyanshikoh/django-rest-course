@@ -1,5 +1,9 @@
 from decimal import Decimal
+
+from django.db import transaction
+
 from rest_framework import serializers
+
 from .models import *
 
 
@@ -53,29 +57,10 @@ class ProductSerializer(serializers.ModelSerializer):
             "collection",
         ]
 
-    # price = serializers.DecimalField(
-    #     max_digits=6, decimal_places=2, source="unit_price"
-    # )
     price_with_tax = serializers.SerializerMethodField(method_name="calculate_tax")
-    # collection = serializers.HyperlinkedRelatedField(
-    #     queryset=Collection.objects.all(), view_name="collection-detail"
-    # )
 
     def calculate_tax(self, product: Product):
         return product.unit_price * Decimal(1.1)
-
-    # These functions are for if you want to create custom functionality for creating and updating
-    # when using the serializer
-    # def create(self, validated_data):
-    #     product = Product(**validated_data)
-    #     product.other = 1
-    #     product.save()
-    #     return product
-
-    # def update(self, instance, validated_data):
-    #     instance.unit_price = validated_data.get("unit_price")
-    #     instance.save()
-    #     return instance
 
 
 class ReviewSerializer(serializers.ModelSerializer):
@@ -186,3 +171,40 @@ class OrderSerializer(serializers.ModelSerializer):
     class Meta:
         model = Order
         fields = ["id", "customer", "placed_at", "payment_status", "items"]
+
+
+class CreateOrderSerializer(
+    serializers.Serializer
+):  # Can't use model serializer cuz cart_id not part of the Order model
+    cart_id = serializers.UUIDField()
+
+    def save(self, **kwargs):
+        with transaction.atomic():  # We use this because due to the multiple queries we wanna ensure that either all the queries
+            # or none of them run, therefore we use a transaction
+            cart_id = self.validated_data["cart_id"]
+
+            # Create a customer if a customer profile not existing, and create an associated order
+            (customer, created) = Customer.objects.get_or_create(
+                user_id=self.context["user_id"]
+            )
+            order = Order.objects.create(customer=customer)
+
+            # Add all the cart items as order items
+            cart_items = CartItem.objects.select_related("product").filter(
+                cart_id=cart_id
+            )
+
+            order_items = [
+                OrderItem(
+                    order=order,
+                    product=item.product,
+                    unit_price=item.product.unit_price,
+                    quantity=item.quantity,
+                )
+                for item in cart_items
+            ]
+
+            OrderItem.objects.bulk_create(order_items)
+
+            # Delete the cart once we are done
+            Cart.objects.filter(pk=cart_id).delete()
