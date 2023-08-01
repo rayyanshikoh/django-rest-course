@@ -197,9 +197,7 @@ class CreateOrderSerializer(
             cart_id = self.validated_data["cart_id"]
 
             # Create a customer if a customer profile not existing, and create an associated order
-            (customer, created) = Customer.objects.get_or_create(
-                user_id=self.context["user_id"]
-            )
+            customer = Customer.objects.get(user_id=self.context["user_id"])
             order = Order.objects.create(customer=customer)
 
             # Add all the cart items as order items
