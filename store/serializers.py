@@ -6,6 +6,8 @@ from rest_framework import serializers
 
 from .models import *
 
+from .signals import order_created
+
 
 class CollectionSerializer(serializers.ModelSerializer):
     class Meta:
@@ -219,5 +221,7 @@ class CreateOrderSerializer(
 
             # Delete the cart once we are done
             Cart.objects.filter(pk=cart_id).delete()
+
+            order_created.send_robust(self.__class__, order=order)
 
             return order
